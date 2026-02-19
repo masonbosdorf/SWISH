@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capture | Warehouse Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+      // Global Safety Net - embedded directly in HTML to catch load errors
+      window.onerror = function(message, source, lineno, colno, error) {
+        document.body.innerHTML = `
+          <div style="color: #ff5555; background: #1a0000; padding: 20px; font-family: monospace; height: 100vh;">
+            <h2 style="margin-top: 0">CRITICAL STARTUP ERROR</h2>
+            <p style="font-size: 1.2em">${message}</p>
+            <div>Source: ${source}:${lineno}:${colno}</div>
+            <pre style="white-space: pre-wrap; margin-top: 20px;">${error && error.stack ? error.stack : 'No stack trace'}</pre>
+          </div>
+        `;
+        console.error("Critical Start Error:", message, error);
+      };
+      console.log("Safety net installed from index.html");
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

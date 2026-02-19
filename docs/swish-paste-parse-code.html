@@ -1,0 +1,834 @@
+<!-- ============================================================
+     SWISH — Paste & Parse Feature
+     Full source code extracted from capture-topnav-working.html
+     ============================================================ -->
+
+
+<!-- ── CSS ──────────────────────────────────────────────────── -->
+<style>
+
+  /* Parse layout — two panel resizable */
+  .parse-layout {
+    display: grid;
+    grid-template-columns: 25% 1fr;
+    gap: 25px;
+    position: relative;
+  }
+
+  .parse-layout.vertical {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .parse-layout.vertical .resize-handle {
+    display: none;
+  }
+
+  .layout-toggle {
+    position: absolute;
+    top: -50px;
+    right: 0;
+    z-index: 20;
+  }
+
+  .layout-toggle button {
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .layout-toggle button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Resizable drag handle */
+  .parse-layout.resizable {
+    position: relative;
+  }
+
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 10;
+    transition: background 0.2s;
+  }
+
+  .resize-handle:hover {
+    background: rgba(30, 136, 229, 0.2);
+  }
+
+  .resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    background: #2d3548;
+    border-radius: 2px;
+  }
+
+  .resize-handle:hover::before {
+    background: #1e88e5;
+  }
+
+  .resize-handle.active {
+    background: rgba(30, 136, 229, 0.3);
+  }
+
+  .resize-handle.active::before {
+    background: #1e88e5;
+  }
+
+  /* Parse textarea */
+  textarea.parse-input {
+    width: 100%;
+    height: 250px;
+    padding: 15px;
+    border: 1px solid var(--ctp-surface0);
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    resize: none;
+    background: var(--ctp-crust);
+    color: var(--ctp-text);
+  }
+
+  textarea.parse-input:focus {
+    outline: none;
+    border-color: var(--ctp-mauve);
+    box-shadow: 0 0 0 3px rgba(203, 166, 247, 0.1);
+  }
+
+  /* Results container */
+  .results {
+    background: var(--ctp-crust);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--ctp-surface0);
+    min-height: 250px;
+    max-height: 650px;
+    overflow-y: auto;
+  }
+
+  /* Quantity badge */
+  .upc-count {
+    background: linear-gradient(135deg, var(--ctp-mauve) 0%, var(--ctp-pink) 100%);
+    color: var(--ctp-crust);
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  /* Unknown barcodes editable inputs */
+  .editable-barcode {
+    background: var(--ctp-surface0);
+    border: 1px solid var(--ctp-overlay0);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--ctp-red);
+    font-family: monospace;
+    font-size: 12px;
+    width: 160px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .editable-barcode:focus {
+    outline: none;
+    border-color: var(--ctp-mauve);
+    background: var(--ctp-surface1);
+  }
+
+  .editable-barcode.edited {
+    border-color: var(--ctp-green);
+    color: var(--ctp-green);
+  }
+
+  #unknownBarcodesSection {
+    border: 1px solid rgba(243, 139, 168, 0.3);
+  }
+
+  #unknownBarcodesSection h3 {
+    color: var(--ctp-red);
+  }
+
+</style>
+
+
+<!-- ── HTML ──────────────────────────────────────────────────── -->
+
+<div id="parse" class="page">
+  <div class="content-header">
+    <h2>Paste &amp; Parse</h2>
+    <p>Quickly analyze bin and UPC data from Excel</p>
+  </div>
+  <div class="content-body">
+
+    <!-- Stat Cards -->
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-number" id="parseStatItems">0</div>
+        <div class="stat-label">Items Scanned</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-number" id="parseStatProducts">0</div>
+        <div class="stat-label">Unique SKUs</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-number" id="parseStatBins">0</div>
+        <div class="stat-label">Unique Bins</div>
+      </div>
+    </div>
+
+    <!-- Layout toggle -->
+    <div class="layout-toggle">
+      <button onclick="toggleParseLayout()" id="layoutToggleBtn">
+        📱 Switch to Vertical
+      </button>
+    </div>
+
+    <!-- Two-panel resizable layout -->
+    <div class="parse-layout resizable" id="parseLayout">
+
+      <!-- LEFT: Input panel -->
+      <div id="parseInputPanel" style="min-width: 200px;">
+        <div class="card">
+          <h3>📥 Input Data</h3>
+          <p style="margin-bottom: 12px; color: #8e96b0; font-size: 13px;">
+            Paste your Excel column with bins and UPC barcodes
+          </p>
+          <textarea class="parse-input" id="parseInput"
+            placeholder="BINA&#10;1234567890&#10;1234567890&#10;BINB&#10;0987654321&#10;...">
+          </textarea>
+          <div class="button-group">
+            <button class="button" onclick="parseData()">🔄 Parse Data</button>
+            <button class="button secondary" onclick="clearParse()">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drag handle -->
+      <div class="resize-handle" id="resizeHandle"></div>
+
+      <!-- RIGHT: Results panels -->
+      <div id="parseResultsPanel" style="min-width: 300px;">
+
+        <!-- Main results table -->
+        <div class="card">
+          <h3>📊 Results</h3>
+          <div id="parseResults" class="results">
+            <div class="empty-state">
+              <p>Paste your data and click "Parse Data" to see results</p>
+            </div>
+          </div>
+          <div class="button-group">
+            <button class="button success" onclick="exportParseResults()">📥 Export to CSV</button>
+          </div>
+        </div>
+
+        <!-- Unknown Barcodes -->
+        <div class="card" style="margin-top: 20px;" id="unknownBarcodesSection">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+            <div>
+              <h3 style="margin-bottom: 4px;">⚠️ Unknown Barcodes</h3>
+              <p style="color: var(--ctp-subtext0); font-size: 13px; margin: 0;">
+                Edit barcodes in the table below then click Refresh
+              </p>
+            </div>
+            <button class="button" onclick="refreshUnknowns()"
+              style="background: var(--ctp-mauve); flex-shrink: 0; margin-left: 16px;">
+              🔄 Refresh Data
+            </button>
+          </div>
+          <div id="unknownBarcodesResults">
+            <div class="empty-state"><p>No unknown barcodes</p></div>
+          </div>
+        </div>
+
+        <!-- WMS Export — Teamwear only -->
+        <div class="card" style="margin-top: 20px;" id="wmsExportSection">
+          <h3>📤 WMS Export (Datapel Format)</h3>
+          <p style="color: var(--ctp-subtext0); font-size: 13px; margin-bottom: 15px;">
+            Export in Datapel WMS format for Courtside Teamwear
+          </p>
+          <div id="wmsResults" class="results">
+            <div class="empty-state"><p>Parse data above to generate WMS export</p></div>
+          </div>
+          <div class="button-group">
+            <button class="button success" onclick="exportWMSFormat()">📥 Export WMS CSV</button>
+          </div>
+        </div>
+
+        <!-- Positive Adjustment — Retail only -->
+        <div class="card" style="margin-top: 20px;" id="positiveAdjustmentSection">
+          <h3>📥 Positive Adjustment (Retail - NetSuite)</h3>
+          <p style="color: var(--ctp-subtext0); font-size: 13px; margin-bottom: 15px;">
+            Export scanned items as positive adjustments for NetSuite
+          </p>
+          <div id="positiveAdjustmentResults" class="results">
+            <div class="empty-state"><p>Parse data above to generate positive adjustment</p></div>
+          </div>
+          <div class="button-group">
+            <button class="button success" onclick="exportPositiveAdjustment()"
+              id="exportPositiveAdjustmentBtn" style="display: none;">
+              📥 Export Positive Adjustment CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Zero-Out — Retail only -->
+        <div class="card" style="margin-top: 20px;" id="zeroOutSection">
+          <h3>🔄 Zero-Out Stock (Retail - NetSuite)</h3>
+          <p style="color: var(--ctp-subtext0); font-size: 13px; margin-bottom: 15px;">
+            Import NetSuite stock report to generate negative adjustment CSV
+          </p>
+          <div style="margin-bottom: 15px;">
+            <h4 style="color: var(--ctp-mauve); font-size: 14px; margin-bottom: 10px;">📤 Upload NetSuite Report</h4>
+            <div class="upload-area"
+              onclick="document.getElementById('zeroOutCsvFile').click()"
+              ondragover="handleDragOver(event)"
+              ondragleave="handleDragLeave(event)"
+              ondrop="handleZeroOutDrop(event)">
+              <div class="upload-icon">📄</div>
+              <div class="upload-text">Click to upload or drag and drop</div>
+              <div class="upload-hint">CSV format: Item, Bin Number, On Hand</div>
+            </div>
+            <input type="file" id="zeroOutCsvFile" accept=".csv"
+              onchange="importZeroOutCsv(event)" style="display: none;">
+          </div>
+          <div id="zeroOutResults" class="results">
+            <div class="empty-state"><p>Upload a CSV to generate zero-out adjustment</p></div>
+          </div>
+          <div class="button-group">
+            <button class="button secondary" onclick="clearZeroOut()"
+              id="clearZeroOutBtn" style="display: none;">Clear</button>
+            <button class="button success" onclick="exportZeroOutFormat()"
+              id="exportZeroOutBtn" style="display: none;">📥 Export Zero-Out CSV</button>
+          </div>
+        </div>
+
+      </div><!-- end results panel -->
+    </div><!-- end parse-layout -->
+  </div>
+</div>
+
+
+<!-- ── JAVASCRIPT ─────────────────────────────────────────────── -->
+<script>
+
+  // ── State ────────────────────────────────────────────────────
+  let lastParseResults = null;
+  window.barcodeCorrections = {};
+
+  // ── Core Parse ───────────────────────────────────────────────
+  function parseData() {
+    const input = document.getElementById('parseInput').value.trim();
+    if (!input) {
+      alert('Please paste some data first!');
+      return;
+    }
+
+    const lines = input.split('\n').map(line => line.trim()).filter(line => line);
+    const results = {};
+    let currentBin = null;
+
+    lines.forEach(line => {
+      if (!/^\d+$/.test(line)) {
+        // Non-numeric = bin location
+        currentBin = line;
+        if (!results[currentBin]) results[currentBin] = {};
+      } else if (currentBin) {
+        // Numeric = barcode — sum duplicates
+        results[currentBin][line] = (results[currentBin][line] || 0) + 1;
+      }
+    });
+
+    lastParseResults = results;
+    displayParseResults(results);
+    displayUnknownBarcodes(results);
+    displayWMSResults(results);
+    displayPositiveAdjustment(results);
+    updateParseStats(results);
+  }
+
+  // ── Stats ────────────────────────────────────────────────────
+  function updateParseStats(results) {
+    const uniqueBins = Object.keys(results).length;
+    const uniqueBarcodes = new Set();
+    let totalItems = 0;
+
+    for (const [bin, upcs] of Object.entries(results)) {
+      for (const [upc, count] of Object.entries(upcs)) {
+        uniqueBarcodes.add(upc);
+        totalItems += count;
+      }
+    }
+
+    document.getElementById('parseStatItems').textContent = formatNumber(totalItems);
+    document.getElementById('parseStatProducts').textContent = formatNumber(uniqueBarcodes.size);
+    document.getElementById('parseStatBins').textContent = formatNumber(uniqueBins);
+  }
+
+  // ── Main Results Table ────────────────────────────────────────
+  function displayParseResults(results) {
+    const container = document.getElementById('parseResults');
+
+    if (Object.keys(results).length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No valid data found</p></div>';
+      return;
+    }
+
+    let tableData = [];
+    let unmatchedCount = 0;
+
+    for (const [bin, upcs] of Object.entries(results)) {
+      for (const [upc, count] of Object.entries(upcs)) {
+        const product = products.find(p => p.barcode === upc);
+        tableData.push({
+          bin, barcode: upc, quantity: count,
+          sku: product ? product.sku : 'UNKNOWN',
+          name: product ? product.name : 'Product not in database',
+          matched: !!product
+        });
+        if (!product) unmatchedCount++;
+      }
+    }
+
+    window.parseTableData = tableData;
+    window.parseSortColumn = 'bin';
+    window.parseSortAscending = true;
+
+    let html = '';
+
+    if (unmatchedCount > 0) {
+      html += `<div style="background: rgba(243,139,168,0.1); border: 1px solid var(--ctp-red);
+        border-radius: 6px; padding: 12px; margin-bottom: 15px; color: var(--ctp-red);">
+        <strong>⚠️ ${unmatchedCount} unknown barcode(s) found</strong>
+        <div style="font-size: 12px; margin-top: 5px; color: var(--ctp-subtext1);">
+          Add these products to your Product Database to see their SKUs
+        </div>
+      </div>`;
+    }
+
+    html += `
+      <div class="table-container" style="border: 1px solid var(--ctp-surface0);
+        border-radius: 8px; background: var(--ctp-crust); max-height: 550px; overflow-y: auto;">
+        <table>
+          <thead style="position: sticky; top: 0; background: var(--ctp-base); z-index: 10;">
+            <tr>
+              <th style="cursor:pointer; user-select:none;" onclick="sortParseTable('bin')">
+                Bin <span id="sort-bin">↕️</span>
+              </th>
+              <th style="cursor:pointer; user-select:none;" onclick="sortParseTable('sku')">
+                SKU <span id="sort-sku">↕️</span>
+              </th>
+              <th style="cursor:pointer; user-select:none;" onclick="sortParseTable('name')">
+                Item Name <span id="sort-name">↕️</span>
+              </th>
+              <th style="cursor:pointer; user-select:none;" onclick="sortParseTable('barcode')">
+                Barcode <span id="sort-barcode">↕️</span>
+              </th>
+              <th style="cursor:pointer; user-select:none; text-align:center;" onclick="sortParseTable('quantity')">
+                Quantity <span id="sort-quantity">↕️</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="parseTableBody"></tbody>
+        </table>
+      </div>`;
+
+    container.innerHTML = html;
+    renderParseTable();
+  }
+
+  window.sortParseTable = function(column) {
+    if (window.parseSortColumn === column) {
+      window.parseSortAscending = !window.parseSortAscending;
+    } else {
+      window.parseSortColumn = column;
+      window.parseSortAscending = true;
+    }
+    renderParseTable();
+  };
+
+  function renderParseTable() {
+    if (!window.parseTableData) return;
+
+    const data = [...window.parseTableData];
+    const column = window.parseSortColumn;
+    const ascending = window.parseSortAscending;
+
+    data.sort((a, b) => {
+      if (column === 'quantity') return ascending ? a[column] - b[column] : b[column] - a[column];
+      const valA = String(a[column]).toLowerCase();
+      const valB = String(b[column]).toLowerCase();
+      if (valA < valB) return ascending ? -1 : 1;
+      if (valA > valB) return ascending ? 1 : -1;
+      return 0;
+    });
+
+    ['bin','sku','name','barcode','quantity'].forEach(col => {
+      const el = document.getElementById(`sort-${col}`);
+      if (el) {
+        el.textContent = col === column ? (ascending ? '▲' : '▼') : '↕️';
+        el.style.color = col === column ? 'var(--ctp-mauve)' : 'var(--ctp-overlay0)';
+      }
+    });
+
+    const tbody = document.getElementById('parseTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.map(row => {
+      const skuColor  = row.matched ? 'var(--ctp-mauve)' : 'var(--ctp-red)';
+      const nameColor = row.matched ? 'var(--ctp-subtext1)' : 'var(--ctp-subtext0)';
+      const nameStyle = row.matched ? '' : 'font-style: italic;';
+      return `
+        <tr>
+          <td><strong style="color: var(--ctp-mauve);">${row.bin}</strong></td>
+          <td><strong style="color: ${skuColor};">${row.sku}</strong></td>
+          <td style="color: ${nameColor}; ${nameStyle}">${row.name || '<em style="color:var(--ctp-overlay0);">No name</em>'}</td>
+          <td><code style="color: var(--ctp-subtext0); font-size: 12px;">${row.barcode}</code></td>
+          <td style="text-align: center;"><span class="upc-count">${row.quantity}x</span></td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ── Unknown Barcodes ─────────────────────────────────────────
+  function displayUnknownBarcodes(results) {
+    const container = document.getElementById('unknownBarcodesResults');
+    const section   = document.getElementById('unknownBarcodesSection');
+
+    const unknownRows = [];
+    for (const [bin, upcs] of Object.entries(results)) {
+      for (const [upc, count] of Object.entries(upcs)) {
+        if (!products.find(p => p.barcode === upc)) {
+          unknownRows.push({ bin, upc, count });
+        }
+      }
+    }
+
+    if (unknownRows.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>✅ No unknown barcodes</p></div>';
+      section.style.borderColor = 'rgba(166, 227, 161, 0.3)';
+      section.querySelector('h3').style.color = 'var(--ctp-green)';
+      section.querySelector('h3').textContent = '✅ Unknown Barcodes';
+      return;
+    }
+
+    section.style.borderColor = 'rgba(243, 139, 168, 0.3)';
+    section.querySelector('h3').style.color = 'var(--ctp-red)';
+    section.querySelector('h3').textContent = `⚠️ Unknown Barcodes (${unknownRows.length})`;
+
+    const rows = unknownRows.map((row, idx) => `
+      <tr>
+        <td><strong style="color: var(--ctp-mauve);">${row.bin}</strong></td>
+        <td><strong style="color: var(--ctp-red);">UNKNOWN</strong></td>
+        <td style="color: var(--ctp-subtext0); font-style: italic;">Product not in database</td>
+        <td>
+          <input class="editable-barcode" type="text"
+            value="${row.upc}"
+            data-original="${row.upc}"
+            data-bin="${row.bin}"
+            id="unknown-input-${idx}"
+            oninput="onBarcodeEdit(this)" />
+        </td>
+        <td style="text-align: center;"><span class="upc-count">${row.count}x</span></td>
+      </tr>`).join('');
+
+    container.innerHTML = `
+      <div class="table-container" style="border: 1px solid var(--ctp-surface0);
+        border-radius: 8px; background: var(--ctp-crust); max-height: 400px; overflow-y: auto;">
+        <table>
+          <thead style="position: sticky; top: 0; background: var(--ctp-base); z-index: 10;">
+            <tr>
+              <th>Bin</th>
+              <th>SKU</th>
+              <th>Name</th>
+              <th>Barcode <span style="font-size:11px; font-weight:400; color:var(--ctp-subtext0);">(editable)</span></th>
+              <th style="text-align:center;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  window.onBarcodeEdit = function(input) {
+    const original = input.getAttribute('data-original');
+    const newVal   = input.value.trim();
+    if (newVal && newVal !== original) {
+      input.classList.add('edited');
+      window.barcodeCorrections[original] = newVal;
+    } else {
+      input.classList.remove('edited');
+      delete window.barcodeCorrections[original];
+    }
+  };
+
+  window.refreshUnknowns = function() {
+    if (!lastParseResults) return;
+
+    const corrections = window.barcodeCorrections;
+    if (Object.keys(corrections).length === 0) {
+      alert('No edits detected. Edit a barcode first then click Refresh.');
+      return;
+    }
+
+    const updated = {};
+    for (const [bin, upcs] of Object.entries(lastParseResults)) {
+      updated[bin] = {};
+      for (const [upc, count] of Object.entries(upcs)) {
+        const corrected = corrections[upc] || upc;
+        updated[bin][corrected] = (updated[bin][corrected] || 0) + count;
+      }
+    }
+
+    lastParseResults = updated;
+    window.barcodeCorrections = {};
+
+    displayParseResults(updated);
+    displayUnknownBarcodes(updated);
+    displayWMSResults(updated);
+    displayPositiveAdjustment(updated);
+    updateParseStats(updated);
+  };
+
+  // ── Clear ────────────────────────────────────────────────────
+  function clearParse() {
+    document.getElementById('parseInput').value = '';
+    document.getElementById('parseResults').innerHTML =
+      '<div class="empty-state"><p>Paste your data and click "Parse Data" to see results</p></div>';
+    document.getElementById('unknownBarcodesResults').innerHTML =
+      '<div class="empty-state"><p>No unknown barcodes</p></div>';
+    document.getElementById('wmsResults').innerHTML =
+      '<div class="empty-state"><p>Parse data above to generate WMS export</p></div>';
+    document.getElementById('positiveAdjustmentResults').innerHTML =
+      '<div class="empty-state"><p>Parse data above to generate positive adjustment</p></div>';
+
+    lastParseResults = null;
+    window.barcodeCorrections = {};
+    window.wmsTableData = null;
+    window.positiveAdjustmentData = null;
+
+    const exportBtn = document.getElementById('exportPositiveAdjustmentBtn');
+    if (exportBtn) exportBtn.style.display = 'none';
+
+    document.getElementById('parseStatItems').textContent = '0';
+    document.getElementById('parseStatProducts').textContent = '0';
+    document.getElementById('parseStatBins').textContent = '0';
+  }
+
+  // ── Export: Raw CSV ──────────────────────────────────────────
+  function exportParseResults() {
+    if (!lastParseResults) {
+      alert('No parsed data to export. Please parse some data first.');
+      return;
+    }
+    let csv = 'Bin,SKU,Product Name,Quantity,Barcode\n';
+    for (const [bin, upcs] of Object.entries(lastParseResults)) {
+      for (const [upc, count] of Object.entries(upcs)) {
+        const product = products.find(p => p.barcode === upc);
+        const sku  = product ? product.sku  : 'UNKNOWN';
+        const name = product ? product.name : 'Product not in database';
+        csv += `"${bin}","${sku}","${name}",${count},"${upc}"\n`;
+      }
+    }
+    downloadCSV(csv, `parsed-inventory-${currentWarehouse.name.replace(/\s+/g, '-')}.csv`);
+  }
+
+  // ── Export: WMS Datapel Format ───────────────────────────────
+  function displayWMSResults(results) {
+    const container = document.getElementById('wmsResults');
+    if (Object.keys(results).length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No data to display</p></div>';
+      return;
+    }
+
+    let tableData = [];
+    for (const [bin, upcs] of Object.entries(results)) {
+      for (const [upc, count] of Object.entries(upcs)) {
+        const product = products.find(p => p.barcode === upc);
+        tableData.push({
+          location: 'PTS-BULK', bin,
+          itemNumber: product ? product.sku : 'UNKNOWN',
+          batchSerial: '~', lot: '0', expiry: '-',
+          count, comment: '', unit: '-', uom: '1'
+        });
+      }
+    }
+    window.wmsTableData = tableData;
+
+    container.innerHTML = `
+      <div class="table-container" style="border: 1px solid var(--ctp-surface0);
+        border-radius: 8px; background: var(--ctp-crust); max-height: 550px; overflow-y: auto;">
+        <table>
+          <thead style="position: sticky; top: 0; background: var(--ctp-base); z-index: 10;">
+            <tr>
+              <th>LOCATION</th><th>BIN</th><th>ITEM NUMBER</th>
+              <th>BATCH-SERIAL</th><th>LOT</th><th>EXPIRY</th>
+              <th>COUNT</th><th>COMMENT</th><th>UNIT</th><th>UOM</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableData.map(row => `
+              <tr>
+                <td><strong style="color:var(--ctp-mauve);">${row.location}</strong></td>
+                <td><strong style="color:var(--ctp-mauve);">${row.bin}</strong></td>
+                <td><strong style="color:var(--ctp-blue);">${row.itemNumber}</strong></td>
+                <td style="color:var(--ctp-subtext0);">${row.batchSerial}</td>
+                <td style="color:var(--ctp-subtext0);">${row.lot}</td>
+                <td style="color:var(--ctp-subtext0);">${row.expiry}</td>
+                <td style="text-align:center;"><span class="upc-count">${row.count}</span></td>
+                <td style="color:var(--ctp-overlay0);">${row.comment}</td>
+                <td style="color:var(--ctp-subtext0);">${row.unit}</td>
+                <td style="color:var(--ctp-subtext0);">${row.uom}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function exportWMSFormat() {
+    if (!window.wmsTableData || window.wmsTableData.length === 0) {
+      alert('No WMS data to export. Please parse some data first.');
+      return;
+    }
+    let csv = 'LOCATION,BIN,ITEM NUMBER,BATCH-SERIAL,LOT,EXPIRY,COUNT,COMMENT,UNIT,UOM\n';
+    window.wmsTableData.forEach(row => {
+      csv += `${row.location},${row.bin},${row.itemNumber},${row.batchSerial},${row.lot},${row.expiry},${row.count},${row.comment},${row.unit},${row.uom}\n`;
+    });
+    downloadCSV(csv, `WMS-Datapel-${currentWarehouse.name.replace(/\s+/g, '-')}.csv`);
+  }
+
+  // ── Export: Positive Adjustment (Retail) ─────────────────────
+  function displayPositiveAdjustment(results) {
+    const container = document.getElementById('positiveAdjustmentResults');
+    const exportBtn = document.getElementById('exportPositiveAdjustmentBtn');
+
+    if (currentWarehouse.name !== 'Courtside Retail') {
+      container.innerHTML = '<div class="empty-state"><p>Parse data above to generate positive adjustment</p></div>';
+      if (exportBtn) exportBtn.style.display = 'none';
+      return;
+    }
+
+    if (Object.keys(results).length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No data to display</p></div>';
+      if (exportBtn) exportBtn.style.display = 'none';
+      return;
+    }
+
+    let tableData = [];
+    for (const [bin, upcs] of Object.entries(results)) {
+      for (const [upc, count] of Object.entries(upcs)) {
+        const product = products.find(p => p.barcode === upc);
+        tableData.push({
+          internalId: '',
+          adjustmentDate: new Date().toLocaleDateString('en-US', { month:'2-digit', day:'2-digit', year:'numeric' }),
+          location: 'Store - Warehouse',
+          externalId: product ? product.sku : 'UNKNOWN',
+          bin, adjustQty: count
+        });
+      }
+    }
+    window.positiveAdjustmentData = tableData;
+
+    container.innerHTML = `
+      <div class="table-container" style="border: 1px solid var(--ctp-surface0);
+        border-radius: 8px; background: var(--ctp-crust); max-height: 550px; overflow-y: auto;">
+        <table>
+          <thead style="position: sticky; top: 0; background: var(--ctp-base); z-index: 10;">
+            <tr>
+              <th>Internal ID</th><th>Adjustment Date</th><th>Location</th>
+              <th>ExternalID</th><th>Bin</th><th>Adjust Qty By</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableData.map(row => `
+              <tr>
+                <td style="color:var(--ctp-overlay0);"><em>(blank)</em></td>
+                <td>${row.adjustmentDate}</td>
+                <td>${row.location}</td>
+                <td><strong style="color:var(--ctp-mauve);">${row.externalId}</strong></td>
+                <td><strong style="color:var(--ctp-blue);">${row.bin}</strong></td>
+                <td style="text-align:center;"><span class="upc-count">${row.adjustQty}</span></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    if (exportBtn) exportBtn.style.display = 'block';
+  }
+
+  function exportPositiveAdjustment() {
+    if (!window.positiveAdjustmentData || window.positiveAdjustmentData.length === 0) {
+      alert('No positive adjustment data to export. Please parse some data first.');
+      return;
+    }
+    let csv = 'Internal ID,Adjustment Date,Location - Store - Warehouse,ExternalID,Bin,Adjust Qty By\n';
+    window.positiveAdjustmentData.forEach(row => {
+      csv += `,${row.adjustmentDate},${row.location},${row.externalId},${row.bin},${row.adjustQty}\n`;
+    });
+    downloadCSV(csv, `Positive-Adjustment-NetSuite-${new Date().toISOString().split('T')[0]}.csv`);
+  }
+
+  // ── Layout Toggle ────────────────────────────────────────────
+  function toggleParseLayout() {
+    const layout = document.getElementById('parseLayout');
+    const btn    = document.getElementById('layoutToggleBtn');
+    const isVertical = layout.classList.toggle('vertical');
+    btn.textContent = isVertical ? '🖥️ Switch to Horizontal' : '📱 Switch to Vertical';
+  }
+
+  // ── Resize Handle ────────────────────────────────────────────
+  (function initResizeHandle() {
+    const handle     = document.getElementById('resizeHandle');
+    const layout     = document.getElementById('parseLayout');
+    const inputPanel = document.getElementById('parseInputPanel');
+    if (!handle || !layout || !inputPanel) return;
+
+    let isResizing = false;
+    let startX     = 0;
+    let startWidth = 0;
+
+    handle.addEventListener('mousedown', e => {
+      isResizing = true;
+      startX     = e.clientX;
+      startWidth = inputPanel.offsetWidth;
+      handle.classList.add('active');
+      document.body.style.cursor    = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!isResizing) return;
+      const delta    = e.clientX - startX;
+      const newWidth = Math.max(200, Math.min(startWidth + delta, layout.offsetWidth - 300));
+      const pct      = (newWidth / layout.offsetWidth) * 100;
+      layout.style.gridTemplateColumns = `${pct}% 10px 1fr`;
+      inputPanel.style.width = `${newWidth}px`;
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isResizing) return;
+      isResizing = false;
+      handle.classList.remove('active');
+      document.body.style.cursor    = '';
+      document.body.style.userSelect = '';
+    });
+  })();
+
+</script>
