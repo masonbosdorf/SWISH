@@ -4704,33 +4704,49 @@ const AVAILABLE_IMAGES = [
 const PROJECT_URL = 'https://luekeyeoxoymchguhrdt.supabase.co';
 const BUCKET = 'product-images';
 
+// Optimized Image Indexing (O(M))
+// We create a Map where the KEY is the baseName (filename without extension)
+// and the VALUE is the full filename.
+const IMAGE_INDEX = new Map<string, string>();
+AVAILABLE_IMAGES.forEach(filename => {
+    const dotIndex = filename.lastIndexOf('.');
+    if (dotIndex !== -1) {
+        const baseName = filename.substring(0, dotIndex).toUpperCase();
+        IMAGE_INDEX.set(baseName, filename);
+    }
+});
+
 /**
  * Attempts to resolve a product image path based on the SKU.
+ * Optimized for 10,000+ items using Map lookup.
  * @param sku The product SKU (e.g., "0227NZ-010-L")
  * @returns The Supabase Storage URL, or undefined if no match found.
  */
 export const resolveProductImage = (sku: string): string | undefined => {
     if (!sku) return undefined;
 
-    // Normalize SKU for comparison
     const normalizedSku = sku.toUpperCase();
+    let matchedImage: string | undefined = undefined;
 
-    const matchedImage = AVAILABLE_IMAGES.find(filename => {
-        // Remove extension to get the "base name"
-        const baseName = filename.substring(0, filename.lastIndexOf('.')).toUpperCase();
+    // Fast Check 1: Exact Match (SKU === BaseName)
+    matchedImage = IMAGE_INDEX.get(normalizedSku);
 
-        // Check if SKU starts with this base name
-        // e.g. "0227NZ-010-L" starts with "0227NZ-010"
-        // Also ensuring it's a prefix match with boundary or exact match
-        if (normalizedSku === baseName || normalizedSku.startsWith(baseName + '-')) {
-            return true;
+    // Fast Check 2: Progressive Segment Match (O(segments))
+    // If "0227NZ-010-L" doesn't match exactly, check "0227NZ-010", then "0227NZ", etc.
+    if (!matchedImage && normalizedSku.includes('-')) {
+        const segments = normalizedSku.split('-');
+        // We iterate backwards from the full length minus one segment
+        for (let i = segments.length - 1; i > 0; i--) {
+            const prefix = segments.slice(0, i).join('-');
+            const candidate = IMAGE_INDEX.get(prefix);
+            if (candidate) {
+                matchedImage = candidate;
+                break;
+            }
         }
-        return false;
-    });
+    }
 
     if (matchedImage) {
-        // Return Supabase Storage URL
-        // Encode the filename to handle spaces/symbols
         return `${PROJECT_URL}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(matchedImage)}`;
     }
 
