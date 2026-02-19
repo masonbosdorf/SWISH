@@ -102,6 +102,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (productsData && productsData.item_master) {
                 localProducts = productsData.item_master.map((p: any) => ({
                     ...p,
+                    sku: String(p.sku || ''), // Sanitize: ensure SKU is a string
+                    name: String(p.name || ''), // Sanitize: ensure Name is a string
                     warehouse: p.warehouse === 'Retail' ? WarehouseDivision.RETAIL : (p.warehouse || WarehouseDivision.TEAMWEAR),
                     status: p.status || 'Active',
                     quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10),

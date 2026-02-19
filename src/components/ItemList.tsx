@@ -78,9 +78,9 @@ const ItemList: React.FC<ItemListProps> = ({ products }) => {
 
     // 1. Filter
     let result = aggregatedProducts.filter(p =>
-      p.sku.toLowerCase().includes(lowerQuery) ||
-      p.name.toLowerCase().includes(lowerQuery) ||
-      p.bins.some(b => b.bin.toLowerCase().includes(lowerQuery))
+      (p.sku || '').toLowerCase().includes(lowerQuery) ||
+      (p.name || '').toLowerCase().includes(lowerQuery) ||
+      p.bins.some(b => (b.bin || '').toLowerCase().includes(lowerQuery))
     );
 
     // 2. Sort

@@ -12,8 +12,8 @@ const PutAway: React.FC<PutAwayProps> = ({ products }) => {
   const [query, setQuery] = useState('');
 
   const filtered = products.filter(p =>
-    p.sku.toLowerCase().includes(query.toLowerCase()) ||
-    p.name.toLowerCase().includes(query.toLowerCase()) ||
+    (p.sku || '').toLowerCase().includes(query.toLowerCase()) ||
+    (p.name || '').toLowerCase().includes(query.toLowerCase()) ||
     (p.barcode && p.barcode.includes(query))
   );
 
@@ -78,7 +78,7 @@ const PutAway: React.FC<PutAwayProps> = ({ products }) => {
                   <span className="text-sm text-zinc-500 font-bold uppercase tracking-widest">Status</span>
                 </div>
                 <div className={`text-2xl font-black tracking-tighter ${p.status === 'Active' ? 'text-emerald-400' :
-                    p.status === 'Inactive' ? 'text-zinc-500' : 'text-red-400'
+                  p.status === 'Inactive' ? 'text-zinc-500' : 'text-red-400'
                   }`}>
                   {p.status}
                 </div>
