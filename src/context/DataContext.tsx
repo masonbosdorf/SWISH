@@ -125,7 +125,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setLastSynced(new Date());
 
         } catch (error) {
-            console.error("Data loading failed:", error);
+            console.error("CRITICAL DATA LOAD FAILURE:", error);
+            // Even if it fails, we MUST stop the loading state so the user isn't stuck.
+            // They might see empty screens, but they won't be blocked by Skeletons forever.
+            setDataLoaded(true);
         } finally {
             setLoading(false);
         }
