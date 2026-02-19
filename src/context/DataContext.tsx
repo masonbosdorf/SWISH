@@ -7,6 +7,7 @@ interface DataContextType {
     products: Product[];
     tasks: Task[];
     loading: boolean;
+    dataLoaded: boolean; // New flag to distinguish between first load and empty state
     refreshData: () => Promise<void>;
     updateProduct: (sku: string, updates: Partial<Product>) => void;
     session: any;
@@ -18,6 +19,7 @@ const DataContext = createContext<DataContextType>({
     products: [],
     tasks: [],
     loading: true,
+    dataLoaded: false,
     refreshData: async () => { },
     updateProduct: () => { },
     session: null,
@@ -25,40 +27,49 @@ const DataContext = createContext<DataContextType>({
     csvStats: null,
 });
 
-export const useData = () => useContext(DataContext);
-
 declare global {
     interface Window {
         swishProducts: Product[];
     }
 }
 
+export const useData = () => useContext(DataContext);
+
+// Simple global cache to persist data even if the component unmounts (rare in this app but good practice)
+let cachedProducts: Product[] = [];
+let cachedTasks: Task[] = [];
+let isDataFetched = false;
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [session, setSession] = useState<any>(null);
-    const [products, setProducts] = useState<Product[]>([]);
-    const [tasks, setTasks] = useState<Task[]>([]);
+    const [products, setProducts] = useState<Product[]>(cachedProducts);
+    const [tasks, setTasks] = useState<Task[]>(cachedTasks);
     const [loading, setLoading] = useState(true);
+    const [dataLoaded, setDataLoaded] = useState(isDataFetched);
     const [lastSynced, setLastSynced] = useState<Date | null>(null);
     const [csvStats, setCsvStats] = useState<{ total: number; duplicates: number; missingFields: number } | null>(null);
 
     // 1. Auth Initialization
     useEffect(() => {
-        // Step A: Check for existing session
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
-            // If no session, we can stop loading early to show the login screen
-            if (!session) setLoading(false);
+            if (!session) {
+                setLoading(false);
+                setDataLoaded(false);
+            }
         });
 
-        // Step B: Listen for auth state changes
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
             setSession(session);
             if (!session) {
-                // Clear state on sign out
                 setProducts([]);
                 setTasks([]);
+                cachedProducts = [];
+                cachedTasks = [];
+                isDataFetched = false;
+                setDataLoaded(false);
                 setLoading(false);
             }
         });
@@ -66,75 +77,88 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => subscription.unsubscribe();
     }, []);
 
-    // 2. Data Fetching Logic (Asynchronous)
-    const loadData = useCallback(async () => {
-        // Safety: Don't fetch data if not logged in
+    // 2. Data Fetching Logic (Asynchronous & Cached)
+    const loadData = useCallback(async (force = false) => {
         if (!session) return;
-        
-        // Show loading state while fetching large JSON
+
+        // If already loaded and not forcing, just use cache
+        if (isDataFetched && !force) {
+            setLoading(false);
+            setDataLoaded(true);
+            return;
+        }
+
         setLoading(true);
 
         try {
             console.log("Fetching primary warehouse data...");
-            
-            // C. Load from Public JSON (Asynchronously to avoid blocking the UI bundle)
+
             const response = await fetch('/data/products.json');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
+
             const productsData = await response.json();
-            
+
             let localProducts: Product[] = [];
             if (productsData && productsData.item_master) {
                 localProducts = productsData.item_master.map((p: any) => ({
                     ...p,
-                    // Ensure defaults and normalization
                     warehouse: p.warehouse === 'Retail' ? WarehouseDivision.RETAIL : (p.warehouse || WarehouseDivision.TEAMWEAR),
                     status: p.status || 'Active',
                     quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10),
-                    // Ensure resolveProductImage is used if image URL is missing
                     image: p.image || resolveProductImage(p.sku)
                 }));
             }
 
-            console.log(`Loaded ${localProducts.length} items from products.json.`);
-
-            // D. Push to State & Window (for legacy component access if any)
+            // Update local state and global cache
             setProducts(localProducts);
-            window.swishProducts = localProducts; 
+            cachedProducts = localProducts;
+            window.swishProducts = localProducts;
 
-            // E. Fetch Realtime Tasks from Supabase
-            const { data: tasksData, error: taskError } = await supabase.from('tasks').select('*');
-            if (taskError) console.error("Error fetching tasks:", taskError);
-            if (tasksData) setTasks(tasksData);
+            const { data: tasksData } = await supabase.from('tasks').select('*');
+            if (tasksData) {
+                setTasks(tasksData);
+                cachedTasks = tasksData;
+            }
 
+            isDataFetched = true;
+            setDataLoaded(true);
             setLastSynced(new Date());
 
         } catch (error) {
-            console.error("Data loading failed (Critical Performance Error):", error);
-            // Even if it fails, we should stop the loading state so the user isn't stuck
+            console.error("Data loading failed:", error);
         } finally {
             setLoading(false);
         }
     }, [session]);
 
-    // 3. Trigger Load on Session Change
+    // 3. Trigger Load IMMEDIATELY on Session Change
     useEffect(() => {
         if (session) {
             loadData();
         }
     }, [session, loadData]);
 
-    // 4. Update Product Helper (Granular State Updates)
     const updateProduct = useCallback((sku: string, updates: Partial<Product>) => {
         setProducts(prev => {
             const newProducts = prev.map((p: Product) => p.sku === sku ? { ...p, ...updates } : p);
+            cachedProducts = newProducts;
             window.swishProducts = newProducts;
             return newProducts;
         });
     }, []);
 
     return (
-        <DataContext.Provider value={{ products, tasks, loading, refreshData: loadData, updateProduct, session, lastSynced, csvStats }}>
+        <DataContext.Provider value={{
+            products,
+            tasks,
+            loading,
+            dataLoaded,
+            refreshData: () => loadData(true), // Refresh forces a reload
+            updateProduct,
+            session,
+            lastSynced,
+            csvStats
+        }}>
             {children}
         </DataContext.Provider>
     );

@@ -30,9 +30,11 @@ const MemoizedApiSettings = React.memo(ApiSettings);
 const MemoizedSetup = React.memo(Setup);
 const MemoizedPasteParse = React.memo(PasteParse);
 
+import { CardSkeleton, DashboardSkeleton, ListSkeleton } from './components/Skeleton';
+
 const App: React.FC = () => {
   // 1. Get Global Data from Context
-  const { products, tasks, loading, session, refreshData } = useData();
+  const { products, tasks, loading, dataLoaded, session, refreshData } = useData();
 
   // 2. Local UI State
   const [activeTab, setActiveTab] = useState<NavigationItem>('Overview');
@@ -64,20 +66,21 @@ const App: React.FC = () => {
     return products.filter((p: Product) => p.warehouse === warehouse);
   }, [products, warehouse]);
 
-  // 4. Render Layout (Robust version)
+  // 4. Render Layout (Robust version with Skeletons)
   const renderContent = () => {
-    // If no products yet but logged in, show a sub-loader for the specific tab
-    if (products.length === 0 && activeTab !== 'Setup' && activeTab !== 'API') {
+    // If auth is confirmed but data is still loading for the first time
+    if (!dataLoaded && activeTab !== 'Setup' && activeTab !== 'API') {
+      if (activeTab === 'Overview') return <DashboardSkeleton />;
+      if (activeTab === 'Item List' || activeTab === 'Database') return <ListSkeleton />;
       return (
-        <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-4">
-          <Loader2 className="animate-spin text-blue-500" size={32} />
-          <p>Preparing {activeTab} data...</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map(i => <CardSkeleton key={i} />)}
         </div>
       );
     }
 
     return (
-      <>
+      <div className="animate-in fade-in duration-300">
         <div style={{ display: activeTab === 'Overview' ? 'block' : 'none' }}>
           {visitedTabs.has('Overview') && <MemoizedDashboard products={filteredProducts} />}
         </div>
@@ -108,7 +111,7 @@ const App: React.FC = () => {
         <div style={{ display: activeTab === 'Setup' ? 'block' : 'none' }}>
           {visitedTabs.has('Setup') && <MemoizedSetup currentWarehouse={warehouse} onImportComplete={refreshData} />}
         </div>
-      </>
+      </div>
     );
   };
 
