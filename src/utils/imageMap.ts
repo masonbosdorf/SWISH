@@ -4701,10 +4701,13 @@ const AVAILABLE_IMAGES = [
     "ZI10FW25BLU.jpg"
 ];
 
+const PROJECT_URL = 'https://luekeyeoxoymchguhrdt.supabase.co';
+const BUCKET = 'product-images';
+
 /**
  * Attempts to resolve a product image path based on the SKU.
  * @param sku The product SKU (e.g., "0227NZ-010-L")
- * @returns The relative path to the image in the public folder, or undefined if no match found.
+ * @returns The Supabase Storage URL, or undefined if no match found.
  */
 export const resolveProductImage = (sku: string): string | undefined => {
     if (!sku) return undefined;
@@ -4726,7 +4729,9 @@ export const resolveProductImage = (sku: string): string | undefined => {
     });
 
     if (matchedImage) {
-        return `/product-images/${matchedImage}`;
+        // Return Supabase Storage URL
+        // Encode the filename to handle spaces/symbols
+        return `${PROJECT_URL}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(matchedImage)}`;
     }
 
     return undefined;
