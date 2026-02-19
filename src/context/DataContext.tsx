@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Product, Task, WarehouseDivision } from '../types';
-import productsData from '../data/products.json';
 import { resolveProductImage } from '../utils/imageMap';
 import { supabase } from '../lib/supabase';
 
@@ -44,16 +43,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1. Auth Initialization
     useEffect(() => {
+        // Step A: Check for existing session
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
-            if (!session) setLoading(false); // If no session, stop loading (show login)
+            // If no session, we can stop loading early to show the login screen
+            if (!session) setLoading(false);
         });
 
+        // Step B: Listen for auth state changes
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
             setSession(session);
             if (!session) {
+                // Clear state on sign out
                 setProducts([]);
                 setTasks([]);
                 setLoading(false);
@@ -63,86 +66,71 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => subscription.unsubscribe();
     }, []);
 
-    // 2. Data Fetching Logic
+    // 2. Data Fetching Logic (Asynchronous)
     const loadData = useCallback(async () => {
+        // Safety: Don't fetch data if not logged in
         if (!session) return;
+        
+        // Show loading state while fetching large JSON
         setLoading(true);
 
         try {
-            // C. Load from Local JSON (The source of truth for this migration)
+            console.log("Fetching primary warehouse data...");
+            
+            // C. Load from Public JSON (Asynchronously to avoid blocking the UI bundle)
+            const response = await fetch('/data/products.json');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const productsData = await response.json();
+            
             let localProducts: Product[] = [];
-            try {
-                // @ts-ignore
-                if (productsData && productsData.item_master) {
-                    // @ts-ignore
-                    localProducts = productsData.item_master.map((p: any) => ({
-                        ...p,
-                        // Ensure defaults
-                        warehouse: p.warehouse === 'Retail' ? WarehouseDivision.RETAIL : (p.warehouse || WarehouseDivision.TEAMWEAR),
-                        status: p.status || 'Active',
-                        quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10)
-                    }));
-                }
-                console.log(`Loaded ${localProducts.length} items from generated JSON.`);
-            } catch (err) {
-                console.error("Failed to load local products JSON", err);
+            if (productsData && productsData.item_master) {
+                localProducts = productsData.item_master.map((p: any) => ({
+                    ...p,
+                    // Ensure defaults and normalization
+                    warehouse: p.warehouse === 'Retail' ? WarehouseDivision.RETAIL : (p.warehouse || WarehouseDivision.TEAMWEAR),
+                    status: p.status || 'Active',
+                    quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10),
+                    // Ensure resolveProductImage is used if image URL is missing
+                    image: p.image || resolveProductImage(p.sku)
+                }));
             }
 
-            // D. Merge & Store (Prioritize Local JSON)
-            const combinedProducts = localProducts;
+            console.log(`Loaded ${localProducts.length} items from products.json.`);
 
-            setProducts(combinedProducts);
-            window.swishProducts = combinedProducts; // CRITICAL: Expose to window
+            // D. Push to State & Window (for legacy component access if any)
+            setProducts(localProducts);
+            window.swishProducts = localProducts; 
 
-            // D. Fetch Tasks
-            const { data: tasksData } = await supabase.from('tasks').select('*');
+            // E. Fetch Realtime Tasks from Supabase
+            const { data: tasksData, error: taskError } = await supabase.from('tasks').select('*');
+            if (taskError) console.error("Error fetching tasks:", taskError);
             if (tasksData) setTasks(tasksData);
 
             setLastSynced(new Date());
 
         } catch (error) {
-            console.error("Data loading failed:", error);
+            console.error("Data loading failed (Critical Performance Error):", error);
+            // Even if it fails, we should stop the loading state so the user isn't stuck
         } finally {
             setLoading(false);
         }
     }, [session]);
 
-    // 3. Trigger Load on Session
+    // 3. Trigger Load on Session Change
     useEffect(() => {
         if (session) {
             loadData();
         }
     }, [session, loadData]);
 
-    // 4. Realtime Subscription (Optional tweak: Update memory on change)
-    useEffect(() => {
-        // We can keep the subscriptions from App.tsx here if we want auto-updates.
-        // For Single File logic: "Supabase Writes Only When Data Changes... Update window.swishProducts"
-        // So if WE make a change, we update local state.
-        // If OTHER users make a change, we might want to listen.
-        // Let's keep it simple for now and rely on manual refresh or write-updates.
-        // But re-implementing the subscription is safer for sync.
-        if (!session) return;
-
-        const handleUpdate = () => {
-            // Debounce or just simple refresh? 
-            // "Stop querying Supabase for every read." - Realtime updates are PUSH, so valid.
-            // But maybe too heavy to re-fetch ALL on every change. 
-            // Ideally we just update the specific item.
-            // For this refactor, let's stick to "Refresh" button for big syncs, 
-            // or specific granular updates if we implement them.
-            // Requirement: "Supabase Writes Only When Data Changes... Update window.swishProducts"
-            // This implies the WRITER updates their cache.
-        };
-
-        // Leaving subscriptions disabled for now to strictly follow "Stop querying Supabase" 
-        // and ensure manual control, unless requested.
-    }, [session]);
-
-    // 5. Update Product Helper
-    // 5. Update Product Helper
+    // 4. Update Product Helper (Granular State Updates)
     const updateProduct = useCallback((sku: string, updates: Partial<Product>) => {
-        setProducts(prev => prev.map((p: Product) => p.sku === sku ? { ...p, ...updates } : p));
+        setProducts(prev => {
+            const newProducts = prev.map((p: Product) => p.sku === sku ? { ...p, ...updates } : p);
+            window.swishProducts = newProducts;
+            return newProducts;
+        });
     }, []);
 
     return (

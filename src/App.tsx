@@ -40,11 +40,12 @@ const App: React.FC = () => {
   const [isWarehouseMenuOpen, setIsWarehouseMenuOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<Set<NavigationItem>>(new Set(['Overview']));
 
+  // Local state for tasks if needed for legacy compatibility
   const [localTasks, setLocalTasks] = useState<Task[]>([]);
 
   // Sync tasks from context when they change
   React.useEffect(() => {
-    if (tasks.length > 0) {
+    if (tasks && tasks.length > 0) {
       setLocalTasks(tasks);
     }
   }, [tasks]);
@@ -58,12 +59,23 @@ const App: React.FC = () => {
   }, [activeTab]);
 
   // 3. Filtering logic
-  const filteredProducts = useMemo(() =>
-    products.filter((p: Product) => p.warehouse === warehouse),
-    [products, warehouse]);
+  const filteredProducts = useMemo(() => {
+    if (!products) return [];
+    return products.filter((p: Product) => p.warehouse === warehouse);
+  }, [products, warehouse]);
 
-  // 4. Render Layout
+  // 4. Render Layout (Robust version)
   const renderContent = () => {
+    // If no products yet but logged in, show a sub-loader for the specific tab
+    if (products.length === 0 && activeTab !== 'Setup' && activeTab !== 'API') {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-4">
+          <Loader2 className="animate-spin text-blue-500" size={32} />
+          <p>Preparing {activeTab} data...</p>
+        </div>
+      );
+    }
+
     return (
       <>
         <div style={{ display: activeTab === 'Overview' ? 'block' : 'none' }}>
@@ -85,20 +97,9 @@ const App: React.FC = () => {
           {visitedTabs.has('Replenishment') && <MemoizedReplenishment />}
         </div>
         <div style={{ display: activeTab === 'Tasks' ? 'block' : 'none' }}>
-          {/* Tasks component expects `tasks` and `setTasks`. Using local state for compatibility. */}
           {visitedTabs.has('Tasks') && <MemoizedTasks tasks={localTasks} setTasks={setLocalTasks} />}
         </div>
         <div style={{ display: activeTab === 'Database' ? 'block' : 'none' }}>
-          {/* Database needs setProducts? Original passed setProducts. 
-                       If Database updates products (edits), it should update Global State.
-                       Existing App passed setProducts(allProducts).
-                       We can pass a dummy setter or one that calls Refresh?
-                       Ideally we implement update logic in Context.
-                       For now, let's pass a no-op or local setter if needed.
-                       Actually, Database probably edits keys.
-                       We should expose a `updateProduct` in context later.
-                       For now: pass a local wrapper around refreshData or warning.
-                    */}
           {visitedTabs.has('Database') && <MemoizedDatabase products={filteredProducts} setProducts={() => console.warn("Direct setProducts deprecated. Use Context.")} />}
         </div>
         <div style={{ display: activeTab === 'API' ? 'block' : 'none' }}>
@@ -114,23 +115,23 @@ const App: React.FC = () => {
   return (
     <div className="h-screen bg-[#0a0a0b] overflow-hidden text-[#e4e4e7] relative">
 
-      {/* 1. Loading Screen Overlay */}
+      {/* 1. Loading Screen Overlay - High Priority */}
       <div
         style={{
           display: loading ? 'flex' : 'none',
-          zIndex: 100 // Topmost
+          zIndex: 100
         }}
-        className="absolute inset-0 bg-[#0a0a0b] flex flex-col gap-4 items-center justify-center transition-opacity duration-500"
+        className="absolute inset-0 bg-[#0a0a0b] flex flex-col gap-6 items-center justify-center"
       >
-        {/* Brand / Logo placeholder */}
-        <h1 className="text-3xl font-bold tracking-tighter text-white">SWISH</h1>
-        <div className="flex items-center gap-2 text-zinc-500 text-sm">
-          <Loader2 className="animate-spin" size={16} />
-          <span>Loading your warehouse data...</span>
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="text-4xl font-black tracking-tighter text-white">SWISH</h1>
+          <div className="h-1 w-12 bg-blue-600 rounded-full"></div>
         </div>
-        {/* <div className="w-48 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 animate-progress"></div>
-                 </div> */}
+
+        <div className="flex flex-center gap-3 text-zinc-400 text-sm font-medium bg-zinc-900/50 px-6 py-3 rounded-2xl border border-zinc-800">
+          <Loader2 className="animate-spin text-blue-500" size={18} />
+          <span>Synchronizing Warehouse OS...</span>
+        </div>
       </div>
 
       {/* 2. Login View */}
@@ -191,23 +192,24 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="text-xs text-zinc-500 mr-2">
-                Logged in as <span className="text-zinc-300 font-bold">{session?.user?.email}</span>
+              <div className="hidden md:flex flex-col items-end mr-2">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Operational Mode</span>
+                <span className="text-xs text-zinc-200 font-medium">{session?.user?.email}</span>
               </div>
 
               <button
                 onClick={() => supabase.auth.signOut()}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg border border-red-500/20"
+                className="text-xs font-bold text-red-500 hover:text-white transition-all bg-red-500/5 hover:bg-red-500 px-4 py-2 rounded-xl border border-red-500/20"
               >
                 Sign Out
               </button>
 
-              <div className="relative group">
+              <div className="relative group hidden lg:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-blue-400 transition-colors" size={16} />
                 <input
                   type="text"
-                  placeholder="Global search..."
-                  className="bg-zinc-900 border border-zinc-800 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-64 transition-all"
+                  placeholder="Universal search..."
+                  className="bg-zinc-900 border border-zinc-800 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50 w-48 transition-all"
                 />
               </div>
               <button className="p-2 text-zinc-400 hover:text-white transition-colors relative">
@@ -219,7 +221,7 @@ const App: React.FC = () => {
 
           {/* Scrollable Page Content */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-            <div className="max-w-7xl mx-auto">
+            <div className="max-w-7xl mx-auto h-full">
               {renderContent()}
             </div>
           </div>
