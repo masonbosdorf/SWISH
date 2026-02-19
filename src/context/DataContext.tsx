@@ -99,34 +99,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const productsData = await response.json();
 
             let localProducts: Product[] = [];
-            const formatBarcode = (val: any): string => {
-                if (!val) return '';
-                const s = String(val);
-                if (s.toLowerCase().includes('e+') || s.toLowerCase().includes('e-')) {
-                    // Force expansion of scientific notation
-                    return Number(val).toLocaleString('fullwide', { useGrouping: false });
-                }
-                return s;
-            };
-
             if (productsData && productsData.item_master) {
                 localProducts = productsData.item_master.map((p: any) => {
-                    // Robust Warehouse Mapping
-                    let division = WarehouseDivision.TEAMWEAR;
-                    const w = String(p.warehouse || '').toLowerCase();
-                    if (w.includes('retail')) {
-                        division = WarehouseDivision.RETAIL;
-                    }
+                    // Robust SKU Assignment: Bible says some are missing SKUs
+                    const sku = String(p.sku || p.barcode || p.name || '').trim();
 
                     return {
                         ...p,
-                        sku: String(p.sku || ''),
-                        name: String(p.name || ''),
-                        barcode: formatBarcode(p.barcode),
-                        warehouse: division,
+                        sku,
+                        name: String(p.name || '').trim(),
+                        barcode: String(p.barcode || '').trim(),
+                        warehouse: p.warehouse === 'Courtside Retail' ? WarehouseDivision.RETAIL : WarehouseDivision.TEAMWEAR,
                         status: p.status || 'Active',
                         quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10),
-                        image: p.image || resolveProductImage(p.sku)
+                        image: resolveProductImage(sku)
                     };
                 });
             }
