@@ -59,7 +59,7 @@ const App: React.FC = () => {
 
   // 3. Filtering logic
   const filteredProducts = useMemo(() =>
-    products.filter(p => p.warehouse === warehouse),
+    products.filter((p: Product) => p.warehouse === warehouse),
     [products, warehouse]);
 
   // 4. Render Layout
