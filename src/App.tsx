@@ -85,7 +85,7 @@ const App: React.FC = () => {
           {visitedTabs.has('Overview') && <MemoizedDashboard products={filteredProducts} />}
         </div>
         <div style={{ display: activeTab === 'Item List' ? 'block' : 'none' }}>
-          {visitedTabs.has('Item List') && <MemoizedItemList products={products} />}
+          {visitedTabs.has('Item List') && <MemoizedItemList products={filteredProducts} />}
         </div>
         <div style={{ display: activeTab === 'Pick Orders' ? 'block' : 'none' }}>
           {visitedTabs.has('Pick Orders') && <MemoizedPickOrders />}

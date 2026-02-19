@@ -99,16 +99,36 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const productsData = await response.json();
 
             let localProducts: Product[] = [];
+            const formatBarcode = (val: any): string => {
+                if (!val) return '';
+                const s = String(val);
+                if (s.toLowerCase().includes('e+') || s.toLowerCase().includes('e-')) {
+                    // Force expansion of scientific notation
+                    return Number(val).toLocaleString('fullwide', { useGrouping: false });
+                }
+                return s;
+            };
+
             if (productsData && productsData.item_master) {
-                localProducts = productsData.item_master.map((p: any) => ({
-                    ...p,
-                    sku: String(p.sku || ''), // Sanitize: ensure SKU is a string
-                    name: String(p.name || ''), // Sanitize: ensure Name is a string
-                    warehouse: p.warehouse === 'Retail' ? WarehouseDivision.RETAIL : (p.warehouse || WarehouseDivision.TEAMWEAR),
-                    status: p.status || 'Active',
-                    quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10),
-                    image: p.image || resolveProductImage(p.sku)
-                }));
+                localProducts = productsData.item_master.map((p: any) => {
+                    // Robust Warehouse Mapping
+                    let division = WarehouseDivision.TEAMWEAR;
+                    const w = String(p.warehouse || '').toLowerCase();
+                    if (w.includes('retail')) {
+                        division = WarehouseDivision.RETAIL;
+                    }
+
+                    return {
+                        ...p,
+                        sku: String(p.sku || ''),
+                        name: String(p.name || ''),
+                        barcode: formatBarcode(p.barcode),
+                        warehouse: division,
+                        status: p.status || 'Active',
+                        quantity: typeof p.quantity === 'number' ? p.quantity : parseInt(p.quantity || '0', 10),
+                        image: p.image || resolveProductImage(p.sku)
+                    };
+                });
             }
 
             // Update local state and global cache
